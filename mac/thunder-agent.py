@@ -240,7 +240,7 @@ def build_task_files(config, create_param, selected, source_path):
             candidates.append(Path(download_path) / folder_name / sub_name)
         candidates.append(Path(download_path) / sub_name)
         existing = next((candidate for candidate in candidates if candidate.exists()), candidates[0])
-        if should_exclude(existing) or str(existing) in seen:
+        if not existing.exists() or should_exclude(existing) or str(existing) in seen:
             continue
         seen.add(str(existing))
         files.append(
@@ -627,7 +627,7 @@ def send_agent_event(client, config, event):
     client.send_json({"role": "agent", "token": config["token"], "event": event})
 
 
-def handle_commands(client, config):
+def handle_commands(client, config, state):
     for message in client.receive_json():
         if message.get("type") != "command":
             continue
@@ -650,7 +650,6 @@ def handle_commands(client, config):
                     },
                 )
             elif command == "migrateFile":
-                state = load_state()
                 file_path = (message.get("filePath") or "").strip()
                 display_name = (message.get("name") or "").strip()
                 remote_path = migrate_selected_file(file_path, state, config, display_name)
@@ -836,7 +835,7 @@ def main():
             save_state(state)
             snapshot = build_snapshot(tasks, state)
             client.send_json({"role": "agent", "token": config["token"], "payload": snapshot})
-            handle_commands(client, config)
+            handle_commands(client, config, state)
         except Exception as error:
             log(f"loop error: {error}")
             client.close()

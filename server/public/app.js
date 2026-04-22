@@ -74,7 +74,7 @@ function renderTasks(tasks = []) {
 
 function renderTaskRow(task) {
   const progress = Math.max(0, Math.min(100, Number(task.progress || 0)));
-  const files = Array.isArray(task.files) ? task.files : [];
+  const files = Array.isArray(task.files) ? task.files.filter((file) => file.exists !== false) : [];
   const shouldChooseFile = task.status === "completed" && files.length > 1;
   const fileList = shouldChooseFile ? renderFileList(files) : "";
   const manualHint = shouldChooseFile
@@ -117,8 +117,10 @@ function renderFileList(files) {
 }
 
 function renderFileLine(file) {
+  const exists = file.exists !== false;
+  const buttonText = exists ? "迁移" : "本地不存在";
   return `
-    <div class="file-line">
+    <div class="file-line ${exists ? "" : "is-missing"}">
       <span title="${escapeHtml(file.path || "")}">${escapeHtml(file.name || "未命名文件")}</span>
       <small>${formatBytes(file.size)}</small>
       <button
@@ -126,7 +128,8 @@ function renderFileLine(file) {
         class="migrate-file"
         data-file-path="${escapeHtml(file.path || "")}"
         data-file-name="${escapeHtml(file.name || "")}"
-      >迁移</button>
+        ${exists ? "" : "disabled"}
+      >${buttonText}</button>
     </div>
   `;
 }
