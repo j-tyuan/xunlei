@@ -52,66 +52,83 @@ function statusText(status) {
   return map[status] || status || "未知";
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function renderTasks(tasks = []) {
   if (!tasks.length) {
-    elements.tasks.className = "task-list empty";
+    elements.tasks.className = "task-list is-empty";
     elements.tasks.textContent = "暂无任务数据";
     return;
   }
+
   elements.tasks.className = "task-list";
-  elements.tasks.innerHTML = tasks
-    .map((task) => {
-      const progress = Math.max(0, Math.min(100, Number(task.progress || 0)));
-      const files = Array.isArray(task.files) ? task.files : [];
-      const fileList =
-        task.status === "completed" && files.length > 1
-          ? `
-          <div class="file-picker">
-            <strong>此任务包含 ${files.length} 个文件，已暂停自动迁移，请手动选择：</strong>
-            ${files
-              .map(
-                (file) => `
-                <div class="file-row">
-                  <span title="${escapeHtml(file.path || "")}">${escapeHtml(file.name || "未命名文件")}</span>
-                  <small>${formatBytes(file.size)}</small>
-                  <button
-                    type="button"
-                    class="migrate-file"
-                    data-file-path="${escapeHtml(file.path || "")}"
-                    data-file-name="${escapeHtml(file.name || "")}"
-                  >迁移此文件</button>
-                </div>
-              `,
-              )
-              .join("")}
-          </div>
-        `
-          : "";
-      const manualHint =
-        task.status === "completed" && task.needsManualMigration
-          ? '<span class="manual-hint">多文件任务不会自动迁移</span>'
-          : "";
-      return `
-        <article class="task-card">
-          <div class="task-title-row">
-            <div>
-              <h3>${escapeHtml(task.name || `任务 ${task.id}`)}</h3>
-              <p>${escapeHtml(task.path || "")}</p>
-            </div>
-            <span class="pill ${task.status || "unknown"}">${statusText(task.status)}</span>
-          </div>
-          <div class="progress-track"><span style="width:${progress}%"></span></div>
-          <div class="task-meta">
-            <span>${progress.toFixed(1)}%</span>
-            <span>${formatBytes(task.downloaded)} / ${formatBytes(task.totalSize)}</span>
-            <span>${formatSpeed(task.speed)}</span>
-          </div>
-          ${manualHint}
-          ${fileList}
-        </article>
-      `;
-    })
-    .join("");
+  elements.tasks.innerHTML = tasks.map(renderTaskRow).join("");
+}
+
+function renderTaskRow(task) {
+  const progress = Math.max(0, Math.min(100, Number(task.progress || 0)));
+  const files = Array.isArray(task.files) ? task.files : [];
+  const shouldChooseFile = task.status === "completed" && files.length > 1;
+  const fileList = shouldChooseFile ? renderFileList(files) : "";
+  const manualHint = shouldChooseFile
+    ? '<span class="inline-warning">多文件任务已暂停自动迁移</span>'
+    : "";
+
+  return `
+    <article class="task-row">
+      <div class="task-main">
+        <div class="task-name">
+          <h3>${escapeHtml(task.name || `任务 ${task.id}`)}</h3>
+          <p>${escapeHtml(task.path || "")}</p>
+        </div>
+        <span class="status-pill ${task.status || "unknown"}">${statusText(task.status)}</span>
+      </div>
+      <div class="progress-track" aria-label="下载进度">
+        <span style="width:${progress}%"></span>
+      </div>
+      <div class="task-meta">
+        <span>${progress.toFixed(1)}%</span>
+        <span>${formatBytes(task.downloaded)} / ${formatBytes(task.totalSize)}</span>
+        <span>${formatSpeed(task.speed)}</span>
+        ${manualHint}
+      </div>
+      ${fileList}
+    </article>
+  `;
+}
+
+function renderFileList(files) {
+  return `
+    <div class="file-list">
+      <div class="file-list-head">
+        <span>选择要迁移的文件</span>
+        <small>${files.length} 个文件</small>
+      </div>
+      ${files.map(renderFileLine).join("")}
+    </div>
+  `;
+}
+
+function renderFileLine(file) {
+  return `
+    <div class="file-line">
+      <span title="${escapeHtml(file.path || "")}">${escapeHtml(file.name || "未命名文件")}</span>
+      <small>${formatBytes(file.size)}</small>
+      <button
+        type="button"
+        class="migrate-file"
+        data-file-path="${escapeHtml(file.path || "")}"
+        data-file-name="${escapeHtml(file.name || "")}"
+      >迁移</button>
+    </div>
+  `;
 }
 
 function renderMigrations(migrations = [], events = []) {
@@ -123,33 +140,25 @@ function renderMigrations(migrations = [], events = []) {
     })),
     ...migrations,
   ];
+
   if (!records.length) {
-    elements.migrations.className = "migration-list empty";
+    elements.migrations.className = "timeline is-empty";
     elements.migrations.textContent = "暂无迁移记录";
     return;
   }
-  elements.migrations.className = "migration-list";
-  elements.migrations.innerHTML = records
-    .slice(0, 8)
-    .map(
-      (item) => `
-      <article class="migration-item">
-        <strong>${escapeHtml(item.name || "未命名资源")}</strong>
-        <span>${escapeHtml(item.status || "pending")}</span>
-        <small>${escapeHtml(item.message || "")}</small>
-      </article>
-    `,
-    )
-    .join("");
+
+  elements.migrations.className = "timeline";
+  elements.migrations.innerHTML = records.slice(0, 10).map(renderTimelineItem).join("");
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+function renderTimelineItem(item) {
+  return `
+    <article class="timeline-item">
+      <span class="timeline-state">${escapeHtml(item.status || "pending")}</span>
+      <strong>${escapeHtml(item.name || "未命名事件")}</strong>
+      <small>${escapeHtml(item.message || "")}</small>
+    </article>
+  `;
 }
 
 function render(state) {
@@ -167,10 +176,6 @@ function render(state) {
   renderMigrations(state.migrations || [], state.events || []);
 }
 
-async function addTask(url) {
-  return postJson("/api/tasks", { url });
-}
-
 async function postJson(url, body) {
   const response = await fetch(url, {
     method: "POST",
@@ -184,34 +189,28 @@ async function postJson(url, body) {
   return result;
 }
 
-async function migrateFile(filePath, name) {
-  return postJson("/api/migrate-file", { filePath, name });
-}
-
-async function cleanupDownloads() {
-  return postJson("/api/cleanup-downloads", { confirm: "清空" });
+function setMessage(element, text, type = "") {
+  element.textContent = text;
+  element.className = type ? `${element.className.split(" ")[0]} ${type}` : element.className.split(" ")[0];
 }
 
 elements.addForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const url = elements.taskUrl.value.trim();
   if (!url) {
-    elements.addMessage.textContent = "请先粘贴下载链接。";
-    elements.addMessage.className = "form-message error";
+    setMessage(elements.addMessage, "请先粘贴下载链接。", "error");
     return;
   }
+
   const button = elements.addForm.querySelector("button");
   button.disabled = true;
-  elements.addMessage.textContent = "正在下发到 Mac 迅雷...";
-  elements.addMessage.className = "form-message";
+  setMessage(elements.addMessage, "正在下发到 Mac 迅雷...");
   try {
-    await addTask(url);
-    elements.addMessage.textContent = "任务已下发，Mac 迅雷会自动接管。";
-    elements.addMessage.className = "form-message success";
+    await postJson("/api/tasks", { url });
+    setMessage(elements.addMessage, "任务已下发，Mac 迅雷会自动接管。", "success");
     elements.taskUrl.value = "";
   } catch (error) {
-    elements.addMessage.textContent = error.message;
-    elements.addMessage.className = "form-message error";
+    setMessage(elements.addMessage, error.message, "error");
   } finally {
     button.disabled = false;
   }
@@ -220,18 +219,20 @@ elements.addForm?.addEventListener("submit", async (event) => {
 elements.tasks?.addEventListener("click", async (event) => {
   const button = event.target.closest(".migrate-file");
   if (!button) return;
+
   const filePath = button.dataset.filePath || "";
   const fileName = button.dataset.fileName || "";
   if (!filePath) return;
   if (!confirm(`确认迁移这个文件到 18 服务器？\n\n${fileName}`)) return;
+
   button.disabled = true;
-  button.textContent = "迁移中...";
+  button.textContent = "迁移中";
   try {
-    await migrateFile(filePath, fileName);
+    await postJson("/api/migrate-file", { filePath, name: fileName });
     button.textContent = "已下发";
   } catch (error) {
     button.disabled = false;
-    button.textContent = "迁移此文件";
+    button.textContent = "迁移";
     alert(error.message);
   }
 });
@@ -239,22 +240,20 @@ elements.tasks?.addEventListener("click", async (event) => {
 elements.cleanupButton?.addEventListener("click", async () => {
   const first = confirm("这个操作会清空 Mac 当前迅雷下载目录下的所有文件，可能包括正在下载和已下载内容。确定继续吗？");
   if (!first) return;
+
   const phrase = prompt("请输入“清空”两个字确认删除：");
   if (phrase !== "清空") {
-    elements.cleanupMessage.textContent = "确认词不匹配，已取消。";
-    elements.cleanupMessage.className = "danger-message error";
+    setMessage(elements.cleanupMessage, "确认词不匹配，已取消。", "error");
     return;
   }
+
   elements.cleanupButton.disabled = true;
-  elements.cleanupMessage.textContent = "清空命令已下发，等待 Mac 执行...";
-  elements.cleanupMessage.className = "danger-message";
+  setMessage(elements.cleanupMessage, "清空命令已下发，等待 Mac 执行...");
   try {
-    await cleanupDownloads();
-    elements.cleanupMessage.textContent = "清空命令已下发，请查看右侧事件结果。";
-    elements.cleanupMessage.className = "danger-message success";
+    await postJson("/api/cleanup-downloads", { confirm: "清空" });
+    setMessage(elements.cleanupMessage, "清空命令已下发，请查看右侧事件结果。", "success");
   } catch (error) {
-    elements.cleanupMessage.textContent = error.message;
-    elements.cleanupMessage.className = "danger-message error";
+    setMessage(elements.cleanupMessage, error.message, "error");
   } finally {
     elements.cleanupButton.disabled = false;
   }
@@ -264,7 +263,7 @@ function connect() {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   const socket = new WebSocket(`${protocol}://${location.host}/ws`);
   socket.addEventListener("open", () => {
-    elements.connection.textContent = "已连接页面通道";
+    elements.connection.textContent = "页面通道已连接";
   });
   socket.addEventListener("message", (event) => {
     try {
