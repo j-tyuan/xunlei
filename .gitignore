@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*.log
+.env
+.thunder-bridge/
+node_modules/
+dist/
+tmp/
