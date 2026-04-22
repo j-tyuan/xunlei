@@ -9,6 +9,20 @@
 
 ## 服务器端
 
+先在本地构建前端：
+
+```bash
+cd server/frontend
+npm install
+npm run build
+```
+
+说明：
+
+- `server/frontend/` 是 Vue 3 + Element Plus 源码
+- `server/public/` 是构建结果
+- 部署服务器时，只需要带上构建后的 `server/`
+
 复制 `server/` 到服务器，例如：
 
 ```bash

@@ -63,6 +63,37 @@ This project must stay on the normal user-controlled download path.
 - `BaseHostController` exposes both normal download and acceleration-related object references:
   - `_downloadSession` is the candidate normal task-control path.
   - `_accelerationService` is a red-line path and must not be invoked or wired into this project.
+- The normal direct-create path is now proven for ordinary HTTP tasks:
+  - attaching LLDB to the Thunder main process is not enough by itself
+  - `createTask:completion:` must be dispatched back onto Thunder's main queue
+  - once scheduled on the main queue, the ordinary task row is created without the "new download task" window
+- The Mac agent now defaults to `task_create_mode=direct`:
+  - it writes a temporary JSON payload plus LLDB script
+  - schedules `Thunder.BaseHostController.createTask:completion:` on the Thunder main queue
+  - confirms success by callback marker or new Thunder DB row
+  - falls back to `open -a Thunder <url>` only when direct create fails and fallback is enabled
+- Task actions are now wired through `DownloadService.xpc` injection instead of the earlier `BaseHostController.startTasks/stopTasks/deleteTasks` trial path:
+  - LLDB attaches to `DownloadService.xpc`
+  - `start` calls `etm_start_task`
+  - `pause` calls `etm_stop_task`
+  - `delete` calls `etm_delete_task` or `etm_destroy_task`
+  - the agent verifies the result by polling live task state until it really changes
+- BT/magnet file selection is still a controlled UI bridge:
+  - `open -a Thunder <url>` opens the normal preview window
+  - the agent reads the file list through Accessibility / `System Events`
+  - if launchd loses assistive access, the script is retried through `ssh 127.0.0.1 /usr/bin/osascript`
+  - the frontend renders those pending dialogs and sends back selected rows for final confirmation
+- The web dashboard now exposes the current create mode:
+  - page telemetry shows `direct`, `direct / fallback`, or `open-url`
+  - the log window records `[create] mode=... fallback=...`
+- The web dashboard frontend is now maintained as source code instead of hand-edited static DOM:
+  - `server/frontend/` is the Vue 3 + Element Plus source workspace
+  - `server/public/` is generated Vite output
+  - future dashboard changes should be made in `server/frontend` and rebuilt into `server/public`
+- The frontend command model is now feedback-driven rather than optimistic:
+  - every mutating action returns a `commandId`
+  - the page keeps global loading until the matching final event arrives from the Mac agent
+  - success and error messages are driven by those final events instead of local assumptions
 - Chrome Native Messaging support in `ChromeExtension` appears to forward browser messages into `XLNewTaskNotification`, so it currently looks like a window-opening bridge rather than a direct normal-create API.
 
 ## TOP0 Work Plan

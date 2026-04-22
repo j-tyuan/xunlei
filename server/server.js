@@ -24,6 +24,8 @@ let latestState = {
   tasks: [],
   migrations: [],
   events: [],
+  pendingDialogs: [],
+  pendingDialog: null,
 };
 
 function appendEvent(event) {
@@ -142,6 +144,14 @@ function isSupportedDownloadUrl(value) {
   return /^(magnet:\?|https?:\/\/|ftp:\/\/|ed2k:\/\/|thunder:\/\/)/i.test(String(value || "").trim());
 }
 
+function isPreviewableDownloadUrl(value) {
+  return /^(magnet:\?|ed2k:\/\/|thunder:\/\/)/i.test(String(value || "").trim());
+}
+
+function isSupportedTaskAction(value) {
+  return ["start", "pause", "delete"].includes(String(value || "").trim().toLowerCase());
+}
+
 function onlineAgents() {
   return Array.from(agentSockets).filter((socket) => !socket.destroyed);
 }
@@ -188,6 +198,100 @@ async function handleAddTask(req, res) {
       message: url.length > 120 ? `${url.slice(0, 120)}...` : url,
     });
     writeJson(res, 200, { code: 0, message: "任务已下发到 Mac 迅雷", data: { id: command.id } });
+  } catch (error) {
+    writeJson(res, 500, { code: -1, message: error.message });
+  }
+}
+
+async function handlePreviewTask(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const url = String(body.url || "").trim();
+    if (!isPreviewableDownloadUrl(url)) {
+      writeJson(res, 400, { code: -1, message: "当前链接不需要文件选择预览" });
+      return;
+    }
+    if (onlineAgents().length === 0) {
+      writeJson(res, 503, { code: -1, message: "Mac 代理不在线，无法获取待下载文件" });
+      return;
+    }
+    const command = {
+      type: "command",
+      command: "previewTask",
+      id: commandId(),
+      url,
+      name: String(body.name || "").trim(),
+    };
+    dispatchAgentCommand(command);
+    appendEvent({
+      kind: "preview",
+      status: "sent",
+      title: "待下载文件请求已下发",
+      message: url.length > 120 ? `${url.slice(0, 120)}...` : url,
+    });
+    writeJson(res, 200, { code: 0, message: "正在获取文件列表", data: { id: command.id } });
+  } catch (error) {
+    writeJson(res, 500, { code: -1, message: error.message });
+  }
+}
+
+async function handleConfirmPreviewTask(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const pendingId = String(body.pendingId || "").trim();
+    const selectedFileIds = Array.isArray(body.selectedFileIds) ? body.selectedFileIds : [];
+    const windowIndex = Number(body.windowIndex || 0);
+    if (!pendingId) {
+      writeJson(res, 400, { code: -1, message: "缺少待确认任务标识" });
+      return;
+    }
+    const command = {
+      type: "command",
+      command: "confirmPreviewTask",
+      id: commandId(),
+      pendingId,
+      selectedFileIds,
+      windowIndex,
+    };
+    if (!dispatchAgentCommand(command)) {
+      writeJson(res, 503, { code: -1, message: "Mac 代理不在线，无法开始下载" });
+      return;
+    }
+    appendEvent({
+      kind: "preview",
+      status: "sent",
+      title: "已下发所选文件下载命令",
+      message: `${selectedFileIds.length || 0} 个文件`,
+    });
+    writeJson(res, 200, { code: 0, message: "已下发下载命令", data: { id: command.id } });
+  } catch (error) {
+    writeJson(res, 500, { code: -1, message: error.message });
+  }
+}
+
+async function handleCancelPreviewTask(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const pendingId = String(body.pendingId || "").trim();
+    const windowIndex = Number(body.windowIndex || 0);
+    const command = {
+      type: "command",
+      command: "cancelPreviewTask",
+      id: commandId(),
+      pendingId,
+      windowIndex,
+    };
+    if (!dispatchAgentCommand(command)) {
+      writeJson(res, 503, { code: -1, message: "Mac 代理不在线，无法取消待下载任务" });
+      return;
+    }
+    appendEvent({
+      kind: "preview",
+      status: "sent",
+      title: "待下载任务取消命令已下发",
+      message: pendingId || "current-preview",
+    });
+    writeJson(res, 200, { code: 0, message: "取消命令已下发", data: { id: command.id } });
   } catch (error) {
     writeJson(res, 500, { code: -1, message: error.message });
   }
@@ -284,9 +388,65 @@ async function handleDeleteFile(req, res) {
   }
 }
 
+async function handleTaskControl(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const taskId = String(body.taskId || "").trim();
+    const action = String(body.action || "").trim().toLowerCase();
+    const name = String(body.name || "").trim();
+    const deleteFiles = Boolean(body.deleteFiles);
+    if (!taskId) {
+      writeJson(res, 400, { code: -1, message: "missing task id" });
+      return;
+    }
+    if (!isSupportedTaskAction(action)) {
+      writeJson(res, 400, { code: -1, message: "unsupported task action" });
+      return;
+    }
+    const command = {
+      type: "command",
+      command: "controlTask",
+      id: commandId(),
+      taskId,
+      action,
+      deleteFiles,
+      name,
+    };
+    if (!dispatchAgentCommand(command)) {
+      writeJson(res, 503, { code: -1, message: "Mac agent is offline, task command could not be delivered" });
+      return;
+    }
+    appendEvent({
+      kind: "task",
+      status: "sent",
+      title: `task ${action} command sent`,
+      message: name || taskId,
+    });
+    writeJson(res, 200, {
+      code: 0,
+      message: `task ${action} command sent`,
+      data: { id: command.id },
+    });
+  } catch (error) {
+    writeJson(res, 500, { code: -1, message: error.message });
+  }
+}
+
 function serveStatic(req, res) {
   if (req.method === "POST" && req.url.split("?")[0] === "/api/tasks") {
     handleAddTask(req, res);
+    return;
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/tasks/preview") {
+    handlePreviewTask(req, res);
+    return;
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/tasks/preview/confirm") {
+    handleConfirmPreviewTask(req, res);
+    return;
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/tasks/preview/cancel") {
+    handleCancelPreviewTask(req, res);
     return;
   }
   if (req.method === "POST" && req.url.split("?")[0] === "/api/migrate-file") {
@@ -299,6 +459,10 @@ function serveStatic(req, res) {
   }
   if (req.method === "POST" && req.url.split("?")[0] === "/api/delete-file") {
     handleDeleteFile(req, res);
+    return;
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/tasks/control") {
+    handleTaskControl(req, res);
     return;
   }
 

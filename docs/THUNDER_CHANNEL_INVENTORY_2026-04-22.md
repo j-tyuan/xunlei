@@ -33,6 +33,15 @@ These paths are candidates for normal download automation:
   - Candidate normal task action.
 - `Thunder.BaseHostController.deleteTasks:deleteFile:completionHandler:`
   - Candidate normal cleanup action.
+- `DownloadService.xpc` internal `etm_*` functions
+  - `etm_start_task`
+  - `etm_stop_task`
+  - `etm_delete_task`
+  - `etm_destroy_task`
+  - Current implementation status:
+    - this is now the adopted path for start / pause / delete
+    - LLDB attaches to `DownloadService.xpc` and injects the task id array plus the chosen `etm_*` call
+    - the agent still verifies success by polling the normal task state afterward
 - `Thunder.BaseHostController.allTasks`
   - Candidate normal task listing path.
 - `Thunder.BaseHostController.downloadingTasks`
@@ -161,3 +170,32 @@ Not allowed:
 - modifying Thunder binaries, signatures, accounts, or task database rows
 - testing with third-party copyrighted content
 
+## Risk-Test Status
+
+2026-04-22 status:
+
+- The ordinary `BaseHostController.createTask:completion:` path is now proven for a local HTTP test file when:
+  - LLDB attaches to the Thunder main process
+  - the create call is dispatched onto Thunder's main queue
+  - the task is confirmed by callback marker plus `etm_task` row
+- This verified path is now integrated into `mac/thunder-agent.py` as the default `task_create_mode=direct`.
+- The current action-control path is no longer just a candidate:
+  - `start / pause / delete` now run through `DownloadService.xpc` internal `etm_*` functions
+  - this replaced the earlier `BaseHostController.startTasks/stopTasks/deleteTasks` trial route because the XPC-internal path gives reliable state changes
+- BT/magnet preview is still a bridge path rather than a fully direct internal API:
+  - the agent opens the standard Thunder preview window
+  - reads the file list through Accessibility
+  - confirms or cancels through the same user-visible window
+- Accessibility execution now has an operational fallback:
+  - first try direct `osascript`
+  - if launchd loses assistive access, retry through `ssh 127.0.0.1 /usr/bin/osascript`
+- A passive DB schema probe completed successfully.
+- A real-download channel test is deferred until TOP0 direct control is stable.
+- Reason:
+  - The direct ordinary create path is stable enough for normal HTTP URLs, but passive channel classification for longer tasks still remains to be done.
+  - LLDB attachment still changes Thunder's window behavior enough to make a live UI-triggered test unreliable, so UI automation remains a fallback only.
+- Next risk-test approach after TOP0:
+  - trigger the now-proven normal direct-control path without the new-task UI
+  - sample task counters for about two minutes
+  - immediately stop the task
+  - classify any observed `origin/server/p2p/dcdn/highspeed/vip` counters from passive metadata
