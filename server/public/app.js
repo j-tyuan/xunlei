@@ -123,13 +123,22 @@ function renderFileLine(file) {
     <div class="file-line ${exists ? "" : "is-missing"}">
       <span title="${escapeHtml(file.path || "")}">${escapeHtml(file.name || "未命名文件")}</span>
       <small>${formatBytes(file.size)}</small>
-      <button
-        type="button"
-        class="migrate-file"
-        data-file-path="${escapeHtml(file.path || "")}"
-        data-file-name="${escapeHtml(file.name || "")}"
-        ${exists ? "" : "disabled"}
-      >${buttonText}</button>
+      <div class="file-actions">
+        <button
+          type="button"
+          class="text-action migrate-file"
+          data-file-path="${escapeHtml(file.path || "")}"
+          data-file-name="${escapeHtml(file.name || "")}"
+          ${exists ? "" : "disabled"}
+        >${buttonText}</button>
+        <button
+          type="button"
+          class="text-action danger delete-file"
+          data-file-path="${escapeHtml(file.path || "")}"
+          data-file-name="${escapeHtml(file.name || "")}"
+          ${exists ? "" : "disabled"}
+        >删除</button>
+      </div>
     </div>
   `;
 }
@@ -220,22 +229,25 @@ elements.addForm?.addEventListener("submit", async (event) => {
 });
 
 elements.tasks?.addEventListener("click", async (event) => {
-  const button = event.target.closest(".migrate-file");
+  const migrateButton = event.target.closest(".migrate-file");
+  const deleteButton = event.target.closest(".delete-file");
+  const button = migrateButton || deleteButton;
   if (!button) return;
 
   const filePath = button.dataset.filePath || "";
   const fileName = button.dataset.fileName || "";
   if (!filePath) return;
-  if (!confirm(`确认迁移这个文件到 18 服务器？\n\n${fileName}`)) return;
+  if (migrateButton && !confirm(`确认迁移这个文件到 18 服务器？\n\n${fileName}`)) return;
+  if (deleteButton && !confirm(`确认删除 Mac 本地这个文件？\n\n${fileName}`)) return;
 
   button.disabled = true;
-  button.textContent = "迁移中";
+  button.textContent = migrateButton ? "迁移中" : "删除中";
   try {
-    await postJson("/api/migrate-file", { filePath, name: fileName });
+    await postJson(migrateButton ? "/api/migrate-file" : "/api/delete-file", { filePath, name: fileName });
     button.textContent = "已下发";
   } catch (error) {
     button.disabled = false;
-    button.textContent = "迁移";
+    button.textContent = migrateButton ? "迁移" : "删除";
     alert(error.message);
   }
 });

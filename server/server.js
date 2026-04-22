@@ -253,6 +253,37 @@ async function handleCleanupDownloadDir(req, res) {
   }
 }
 
+async function handleDeleteFile(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const filePath = String(body.filePath || "").trim();
+    if (!filePath) {
+      writeJson(res, 400, { code: -1, message: "缺少要删除的文件路径" });
+      return;
+    }
+    const command = {
+      type: "command",
+      command: "deleteFile",
+      id: commandId(),
+      filePath,
+      name: String(body.name || "").trim(),
+    };
+    if (!dispatchAgentCommand(command)) {
+      writeJson(res, 503, { code: -1, message: "Mac 代理不在线，无法删除文件" });
+      return;
+    }
+    appendEvent({
+      kind: "delete",
+      status: "sent",
+      title: "删除文件命令已下发",
+      message: body.name || filePath,
+    });
+    writeJson(res, 200, { code: 0, message: "删除命令已下发", data: { id: command.id } });
+  } catch (error) {
+    writeJson(res, 500, { code: -1, message: error.message });
+  }
+}
+
 function serveStatic(req, res) {
   if (req.method === "POST" && req.url.split("?")[0] === "/api/tasks") {
     handleAddTask(req, res);
@@ -264,6 +295,10 @@ function serveStatic(req, res) {
   }
   if (req.method === "POST" && req.url.split("?")[0] === "/api/cleanup-downloads") {
     handleCleanupDownloadDir(req, res);
+    return;
+  }
+  if (req.method === "POST" && req.url.split("?")[0] === "/api/delete-file") {
+    handleDeleteFile(req, res);
     return;
   }
 

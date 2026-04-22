@@ -501,6 +501,20 @@ def cleanup_download_dir(config, confirm):
     return {"root": str(root), "removed": removed, "bytes": bytes_removed}
 
 
+def delete_selected_file(file_path, config, display_name=""):
+    if not is_safe_download_child(file_path, config):
+        raise RuntimeError("refuse to delete path outside download root")
+    source = Path(file_path).expanduser().resolve()
+    if not source.exists() or not source.is_file():
+        raise RuntimeError("selected file not found")
+    if should_exclude(source):
+        raise RuntimeError("selected file is a temporary/control file")
+    size = path_size(str(source))
+    source.unlink()
+    log(f"deleted local file {source}, bytes={size}")
+    return {"name": display_name or source.name, "path": str(source), "bytes": size}
+
+
 def handle_migrations(tasks, state, config):
     if not config.get("migration_enabled", True):
         return
@@ -675,6 +689,21 @@ def handle_commands(client, config, state):
                         "status": "done",
                         "title": "迅雷下载目录已清空",
                         "message": f"{result['root']}，删除 {result['removed']} 项，释放 {result['bytes']} 字节",
+                        "commandId": command_id,
+                    },
+                )
+            elif command == "deleteFile":
+                file_path = (message.get("filePath") or "").strip()
+                display_name = (message.get("name") or "").strip()
+                result = delete_selected_file(file_path, config, display_name)
+                send_agent_event(
+                    client,
+                    config,
+                    {
+                        "kind": "delete",
+                        "status": "done",
+                        "title": "本地文件已删除",
+                        "message": f"{result['name']}，释放 {result['bytes']} 字节",
                         "commandId": command_id,
                     },
                 )

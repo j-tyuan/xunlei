@@ -173,8 +173,7 @@ h2 {
 }
 
 .add-form button,
-.danger-button,
-.file-line button {
+.danger-button {
   border: 0;
   cursor: pointer;
   font-weight: 900;
@@ -420,7 +419,7 @@ button:disabled {
 .file-list-head,
 .file-line {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 96px 72px;
+  grid-template-columns: minmax(0, 1fr) 96px 112px;
   gap: 12px;
   align-items: center;
 }
@@ -451,12 +450,29 @@ button:disabled {
   color: var(--soft);
 }
 
-.file-line button {
-  border-radius: 999px;
-  padding: 8px 0;
-  color: #04111f;
-  background: var(--green);
+.file-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.text-action {
+  border: 0;
+  padding: 0;
+  color: var(--cyan);
+  background: transparent;
   font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.text-action.danger {
+  color: var(--red);
+}
+
+.text-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .timeline {
