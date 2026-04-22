@@ -8,8 +8,30 @@ Goal: build a stable non-UI control path for Thunder on macOS so the web dashboa
 
 This is the highest-priority task. UI automation is only a fallback after the direct-control path is proven blocked.
 
+## Legal and Safety Boundary
+
+This project must stay on the normal user-controlled download path.
+
+- Allowed:
+  - create a normal Thunder download task from a user-provided URL or magnet
+  - read local Thunder task status from the user's own Mac
+  - show BT/magnet file lists before starting when Thunder exposes them through normal task metadata
+  - migrate completed local files to the user's own Jellyfin server
+- Not allowed:
+  - invoke, patch, unlock, or emulate Thunder VIP, premium, cloud acceleration, fast-lane, or privileged download services
+  - bypass account, payment, region, DRM, copyright, anti-abuse, or access-control checks
+  - alter Thunder's database, executable, signature, licensing state, or network protocol to gain download capability
+  - automate source acquisition for content the user is not authorized to download
+- Red-line handling:
+  - if reverse engineering discovers an acceleration or privileged service entry, document its name and why it is excluded
+  - do not call or test that entry
+  - keep implementation limited to ordinary task creation, ordinary task polling, and local file management
+
 ## Current Findings
 
+- Channel and risk inventory:
+  - `docs/THUNDER_CHANNEL_INVENTORY_2026-04-22.md`
+  - normal-control candidates, UI bridge paths, passive counters, VIP/acceleration red lines, cloud/offline privilege paths, and safe risk-test strategy are recorded there.
 - Thunder runs a main app process and a private XPC process:
   - `/Applications/Thunder.app/Contents/MacOS/Thunder`
   - `/Applications/Thunder.app/Contents/XPCServices/DownloadService.xpc/Contents/MacOS/DownloadService`
@@ -38,6 +60,10 @@ This is the highest-priority task. UI automation is only a fallback after the di
   - Posting it through `NSDistributedNotificationCenter` can open Thunder's "new download task" window.
   - A userInfo payload with `url`, `taskURL`, `saveDirPath`, and `fileName` populates the window table and URL text area.
   - This still does not bypass the new-task window or create the task directly, so it is an intermediate control surface, not the TOP0 finish line.
+- `BaseHostController` exposes both normal download and acceleration-related object references:
+  - `_downloadSession` is the candidate normal task-control path.
+  - `_accelerationService` is a red-line path and must not be invoked or wired into this project.
+- Chrome Native Messaging support in `ChromeExtension` appears to forward browser messages into `XLNewTaskNotification`, so it currently looks like a window-opening bridge rather than a direct normal-create API.
 
 ## TOP0 Work Plan
 
