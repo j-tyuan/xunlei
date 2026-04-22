@@ -34,6 +34,10 @@ This is the highest-priority task. UI automation is only a fallback after the di
 - A normal external process cannot connect to `com.xunlei.DownloadService` by `initWithServiceName`; the connection is invalidated.
 - A temporary `.app` bundle with `DownloadService.xpc` embedded can connect far enough to call `getVersionwithReply:`.
 - Calling `initETM:` or `createTask:` from that temporary XPC environment currently invalidates/interrupts the XPC connection, which suggests the service needs Thunder's real initialized runtime, bundle context, or database ownership.
+- `XLNewTaskNotification` is a real main-process entry:
+  - Posting it through `NSDistributedNotificationCenter` can open Thunder's "new download task" window.
+  - A userInfo payload with `url`, `taskURL`, `saveDirPath`, and `fileName` populates the window table and URL text area.
+  - This still does not bypass the new-task window or create the task directly, so it is an intermediate control surface, not the TOP0 finish line.
 
 ## TOP0 Work Plan
 
@@ -47,12 +51,18 @@ This is the highest-priority task. UI automation is only a fallback after the di
    - Determine whether any scheme can pass `url`, `saveDirPath`, `selectedFileIndexes`, or equivalent task metadata.
    - Prefer URL Scheme if it supports file selection because it is less invasive than XPC or process injection.
 
-3. Build a dedicated macOS helper only after the control path is proven:
+3. Reverse the notification path:
+   - Determine the full `XLNewTaskNotification` payload shape.
+   - Check whether there is an undocumented flag for auto-create, silent create, selected BT indexes, or panel bypass.
+   - If no bypass exists, treat it as a bridge for file-list discovery only.
+
+4. Build a dedicated macOS helper only after the control path is proven:
    - If XPC is viable, package a helper that can call `createTask:` and BT selection methods.
    - If URL Scheme is viable, package a helper around URL generation and state polling.
+   - If notification is viable, package a helper around the notification payload and direct confirmation path.
    - Keep the web dashboard API unchanged where possible.
 
-4. Keep UI automation as fallback only:
+5. Keep UI automation as fallback only:
    - The current AppleScript click-based approach is not the TOP0 target.
    - Do not invest further in UI list scraping unless direct XPC/URL paths are conclusively blocked.
 
