@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>迅雷下载中枢</title>
-    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/style.css?v=202604220033" />
   </head>
   <body>
     <main class="workspace">
@@ -66,25 +66,31 @@
           <div class="section-head">
             <div>
               <p class="eyebrow">Queue</p>
-              <h2>下载任务</h2>
+              <div class="section-title-row">
+                <h2>下载任务</h2>
+                <button id="showLogs" class="text-link" type="button">查看日志</button>
+              </div>
             </div>
             <span id="lastUpdate" class="subtle">等待数据</span>
           </div>
           <div id="tasks" class="task-list is-empty">暂无任务数据</div>
         </section>
-
-        <aside class="surface activity">
-          <div class="section-head">
-            <div>
-              <p class="eyebrow">Activity</p>
-              <h2>迁移与事件</h2>
-            </div>
-          </div>
-          <div id="migrations" class="timeline is-empty">暂无迁移记录</div>
-          <p class="rule-note">单文件任务完成后自动迁移；多文件任务只展示文件清单，需手动选择迁移。</p>
-        </aside>
       </section>
     </main>
-    <script src="/app.js"></script>
+
+    <section id="logWindow" class="log-window is-hidden" aria-label="日志窗口">
+      <div id="logWindowHeader" class="log-window-header">
+        <div class="terminal-title">
+          <span></span>
+          <span></span>
+          <span></span>
+          <strong>Thunder Bridge 日志</strong>
+        </div>
+        <button id="logClose" class="log-close" type="button">关闭</button>
+      </div>
+      <pre id="logBody" class="log-body">等待日志...</pre>
+    </section>
+
+    <script src="/app.js?v=202604220033"></script>
   </body>
 </html>

@@ -8,13 +8,19 @@ const elements = {
   macState: document.querySelector("#macState"),
   lastUpdate: document.querySelector("#lastUpdate"),
   tasks: document.querySelector("#tasks"),
-  migrations: document.querySelector("#migrations"),
   addForm: document.querySelector("#addTaskForm"),
   taskUrl: document.querySelector("#taskUrl"),
   addMessage: document.querySelector("#addTaskMessage"),
   cleanupButton: document.querySelector("#cleanupDownloads"),
   cleanupMessage: document.querySelector("#cleanupMessage"),
+  showLogs: document.querySelector("#showLogs"),
+  logWindow: document.querySelector("#logWindow"),
+  logHeader: document.querySelector("#logWindowHeader"),
+  logClose: document.querySelector("#logClose"),
+  logBody: document.querySelector("#logBody"),
 };
+
+let latestState = null;
 
 function formatBytes(bytes) {
   const value = Number(bytes || 0);
@@ -38,6 +44,13 @@ function formatTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "等待数据";
   return date.toLocaleTimeString("zh-CN", { hour12: false });
+}
+
+function formatLogTime(value) {
+  if (!value) return "--:--:--";
+  const date = typeof value === "number" ? new Date(value * 1000) : new Date(value);
+  if (Number.isNaN(date.getTime())) return "--:--:--";
+  return date.toLocaleString("zh-CN", { hour12: false });
 }
 
 function statusText(status) {
@@ -75,11 +88,9 @@ function renderTasks(tasks = []) {
 function renderTaskRow(task) {
   const progress = Math.max(0, Math.min(100, Number(task.progress || 0)));
   const files = Array.isArray(task.files) ? task.files.filter((file) => file.exists !== false) : [];
-  const shouldChooseFile = task.status === "completed" && files.length > 1;
+  const shouldChooseFile = task.status === "completed" && task.needsManualMigration && files.length > 0;
   const fileList = shouldChooseFile ? renderFileList(files) : "";
-  const manualHint = shouldChooseFile
-    ? '<span class="inline-warning">多文件任务已暂停自动迁移</span>'
-    : "";
+  const manualHint = shouldChooseFile ? '<span class="inline-warning">多文件任务已暂停自动迁移</span>' : "";
 
   return `
     <article class="task-row">
@@ -117,10 +128,8 @@ function renderFileList(files) {
 }
 
 function renderFileLine(file) {
-  const exists = file.exists !== false;
-  const buttonText = exists ? "迁移" : "本地不存在";
   return `
-    <div class="file-line ${exists ? "" : "is-missing"}">
+    <div class="file-line">
       <span title="${escapeHtml(file.path || "")}">${escapeHtml(file.name || "未命名文件")}</span>
       <small>${formatBytes(file.size)}</small>
       <div class="file-actions">
@@ -129,51 +138,20 @@ function renderFileLine(file) {
           class="text-action migrate-file"
           data-file-path="${escapeHtml(file.path || "")}"
           data-file-name="${escapeHtml(file.name || "")}"
-          ${exists ? "" : "disabled"}
-        >${buttonText}</button>
+        >迁移</button>
         <button
           type="button"
           class="text-action danger delete-file"
           data-file-path="${escapeHtml(file.path || "")}"
           data-file-name="${escapeHtml(file.name || "")}"
-          ${exists ? "" : "disabled"}
         >删除</button>
       </div>
     </div>
   `;
 }
 
-function renderMigrations(migrations = [], events = []) {
-  const records = [
-    ...events.map((event) => ({
-      name: event.title || "系统事件",
-      status: event.status || event.kind || "event",
-      message: event.message || "",
-    })),
-    ...migrations,
-  ];
-
-  if (!records.length) {
-    elements.migrations.className = "timeline is-empty";
-    elements.migrations.textContent = "暂无迁移记录";
-    return;
-  }
-
-  elements.migrations.className = "timeline";
-  elements.migrations.innerHTML = records.slice(0, 10).map(renderTimelineItem).join("");
-}
-
-function renderTimelineItem(item) {
-  return `
-    <article class="timeline-item">
-      <span class="timeline-state">${escapeHtml(item.status || "pending")}</span>
-      <strong>${escapeHtml(item.name || "未命名事件")}</strong>
-      <small>${escapeHtml(item.message || "")}</small>
-    </article>
-  `;
-}
-
 function render(state) {
+  latestState = state;
   const stats = state.stats || {};
   const mac = state.mac || {};
   elements.dot.classList.toggle("online", Boolean(state.agentOnline));
@@ -185,7 +163,64 @@ function render(state) {
   elements.macState.textContent = mac.thunderRunning ? "迅雷运行中" : "迅雷未运行";
   elements.lastUpdate.textContent = `更新于 ${formatTime(state.updatedAt || mac.collectedAt)}`;
   renderTasks(state.tasks || []);
-  renderMigrations(state.migrations || [], state.events || []);
+  if (!elements.logWindow.classList.contains("is-hidden")) {
+    renderLogWindow();
+  }
+}
+
+function buildLogLines(state) {
+  const stats = state?.stats || {};
+  const mac = state?.mac || {};
+  const tasks = state?.tasks || [];
+  const events = state?.events || [];
+  const migrations = state?.migrations || [];
+  const lines = [];
+
+  lines.push("Thunder Bridge Console");
+  lines.push("=".repeat(72));
+  lines.push(`[agent] online=${Boolean(state?.agentOnline)} thunder=${Boolean(mac.thunderRunning)} host=${mac.host || "unknown"}`);
+  lines.push(`[stats] speed=${formatSpeed(stats.totalSpeed)} active=${stats.activeTasks ?? 0} completed=${stats.completedTasks ?? 0} total=${stats.totalTasks ?? 0}`);
+  lines.push(`[time ] updated=${formatLogTime(state?.updatedAt || mac.collectedAt)}`);
+  lines.push("");
+  lines.push("# Tasks");
+  if (!tasks.length) {
+    lines.push("  (empty)");
+  } else {
+    for (const task of tasks) {
+      lines.push(`  [${statusText(task.status)}] ${task.name || `任务 ${task.id}`}`);
+      lines.push(`      progress=${Number(task.progress || 0).toFixed(1)}% speed=${formatSpeed(task.speed)} path=${task.path || "-"}`);
+      const files = Array.isArray(task.files) ? task.files.filter((file) => file.exists !== false) : [];
+      for (const file of files) {
+        lines.push(`      file ${formatBytes(file.size).padStart(9, " ")}  ${file.name}`);
+      }
+    }
+  }
+  lines.push("");
+  lines.push("# Events");
+  if (!events.length) {
+    lines.push("  (empty)");
+  } else {
+    for (const event of events.slice(0, 30)) {
+      lines.push(`  ${formatLogTime(event.time)}  [${event.status || event.kind || "event"}] ${event.title || "系统事件"}`);
+      if (event.message) lines.push(`      ${event.message}`);
+    }
+  }
+  lines.push("");
+  lines.push("# Migrations");
+  if (!migrations.length) {
+    lines.push("  (empty)");
+  } else {
+    for (const item of migrations.slice(0, 30)) {
+      lines.push(`  ${formatLogTime(item.time)}  [${item.status || "pending"}] ${item.name || "未命名资源"}`);
+      if (item.message) lines.push(`      ${item.message}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+function renderLogWindow() {
+  elements.logBody.textContent = buildLogLines(latestState || {});
 }
 
 async function postJson(url, body) {
@@ -266,13 +301,54 @@ elements.cleanupButton?.addEventListener("click", async () => {
   setMessage(elements.cleanupMessage, "清空命令已下发，等待 Mac 执行...");
   try {
     await postJson("/api/cleanup-downloads", { confirm: "清空" });
-    setMessage(elements.cleanupMessage, "清空命令已下发，请查看右侧事件结果。", "success");
+    setMessage(elements.cleanupMessage, "清空命令已下发，请查看日志窗口。", "success");
   } catch (error) {
     setMessage(elements.cleanupMessage, error.message, "error");
   } finally {
     elements.cleanupButton.disabled = false;
   }
 });
+
+elements.showLogs?.addEventListener("click", () => {
+  elements.logWindow.classList.remove("is-hidden");
+  renderLogWindow();
+});
+
+elements.logClose?.addEventListener("click", () => {
+  elements.logWindow.classList.add("is-hidden");
+});
+
+function setupLogWindowDrag() {
+  let dragging = false;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  elements.logHeader?.addEventListener("pointerdown", (event) => {
+    if (event.target.closest("button")) return;
+    const rect = elements.logWindow.getBoundingClientRect();
+    dragging = true;
+    offsetX = event.clientX - rect.left;
+    offsetY = event.clientY - rect.top;
+    elements.logWindow.style.left = `${rect.left}px`;
+    elements.logWindow.style.top = `${rect.top}px`;
+    elements.logWindow.style.right = "auto";
+    elements.logWindow.style.bottom = "auto";
+    elements.logHeader.setPointerCapture(event.pointerId);
+  });
+
+  elements.logHeader?.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    const nextLeft = Math.max(8, Math.min(window.innerWidth - 220, event.clientX - offsetX));
+    const nextTop = Math.max(8, Math.min(window.innerHeight - 80, event.clientY - offsetY));
+    elements.logWindow.style.left = `${nextLeft}px`;
+    elements.logWindow.style.top = `${nextTop}px`;
+  });
+
+  elements.logHeader?.addEventListener("pointerup", (event) => {
+    dragging = false;
+    elements.logHeader.releasePointerCapture(event.pointerId);
+  });
+}
 
 function connect() {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
@@ -293,6 +369,8 @@ function connect() {
     setTimeout(connect, 1500);
   });
 }
+
+setupLogWindowDrag();
 
 fetch("/api/state")
   .then((res) => res.json())
